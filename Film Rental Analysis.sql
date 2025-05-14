@@ -1,6 +1,5 @@
 -- Project Overview
--- Objective: To analyze customer behavior, rental trends, and film popularity to provide actionable 
--- business insights for a film rental company.
+-- Objective: To analyze and generate a report to uncover customer behavior, rental trends, film popularity and business insights to a film rental company.
 
 use film_rental;
 
