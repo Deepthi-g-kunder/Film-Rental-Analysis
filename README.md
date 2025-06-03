@@ -1,1 +1,1 @@
-# Film-Rental-Analysis
+# SQL - Projects
