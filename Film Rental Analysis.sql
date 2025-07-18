@@ -30,24 +30,34 @@ WHERE
         order by 2 desc
         ;
         
--- 	How many rentals and revenue were made in each month_name?
-select date_format(rental_date, '%Y-%m') as "Year and Month"  ,count(a.rental_id) as "Rentals Sold",sum(amount)as Revenue  from  rental a
+-- 	How many rentals and revenue were made in each month
+select date_format(rental_date, '%Y-%M') as "Year and Month"  ,count(a.rental_id) as "Rentals Sold",sum(amount)as Revenue  from  rental a
 left join payment b 
 on a.rental_id = b.rental_id
 group by 1
 order by 1 ;
 
+-- 	What is the average rental rate for films that were taken from the last 30 days.
+SELECT title ,round(avg(rental_rate),2) as average from film a
+left join inventory b
+on a.film_id = b.film_id
+left join rental c
+on b.inventory_id = c. inventory_id
+WHERE rental_date >= DATE_SUB((select max(rental_date) from rental), INTERVAL 30 DAY)
+group by title
+order by 2 desc;
+
 --  Top Revenue-Generating Films
-SELECT f.title, SUM(p.amount) AS 'Total Revenue '
+SELECT f.title, SUM(p.amount) AS 'Total Revenue ',count(r.rental_id) as 'Rentals '
 FROM payment p
 JOIN rental r ON p.rental_id = r.rental_id
 JOIN inventory i ON r.inventory_id = i.inventory_id
 JOIN film f ON i.film_id = f.film_id
 GROUP BY f.film_id
-ORDER BY 2 DESC
+ORDER BY SUM(p.amount) DESC
 LIMIT 10;
 
- -- Top 3 Paying Customers
+ -- Top 3 High Paying Customers
 SELECT c.customer_id, c.first_name, c.last_name, SUM(p.amount) AS total_paid
 FROM customer c
 JOIN payment p ON c.customer_id = p.customer_id
@@ -55,8 +65,8 @@ GROUP BY c.customer_id
 ORDER BY total_paid DESC
 LIMIT 3;
 
--- Top Revenue Generating Category
-select a.name , sum(amount) as Revenue
+-- Top 10 Revenue Generating Category
+select a.name , sum(amount) as Revenue, count(d.rental_id) as 'Rentals '
  from
  category a
 left join film_category b
@@ -68,29 +78,8 @@ on c.inventory_id = d.inventory_id
 left join payment p
 on d.rental_id = p.rental_id
 group by 1
-order by 2 desc;
-
--- 	Popular  category of films in terms of the number of rentals
-select a.name , count(rental_id) as 'Rentals '  from category a
-left join film_category b
-on a.category_id = b.category_id
-left join inventory c
-on b.film_id = c.film_id
-left join rental d
-on c.inventory_id = d.inventory_id
-group by 1
-order by 2 desc;
-
-
--- 	What is the average rental rate for films that were taken from the last 30 days.
-SELECT title ,round(avg(rental_rate),2) as average from film a
-left join inventory b
-on a.film_id = b.film_id
-left join rental c
-on b.inventory_id = c. inventory_id
-WHERE rental_date >= DATE_SUB((select max(rental_date) from rental), INTERVAL 30 DAY)
-group by title
-order by 2 desc;
+order by sum(amount) desc
+Limit 10;
 
 -- Films  which has not been rented by any customer
 select f.title from film f
@@ -110,14 +99,6 @@ LEFT JOIN rental r
   AND r.rental_date >= DATE_SUB((SELECT MAX(rental_date) FROM rental), INTERVAL 3 MONTH)
   -- AND r.rental_date >= ((SELECT MAX(rental_date) FROM rental)-INTERVAL 3 MONTH)
 WHERE r.rental_id IS NULL;
-
-
- -- Customers Inactive for More Than 6 Months ( Different Approach)
-SELECT c.customer_id, c.first_name, c.last_name, MAX(r.rental_date) AS last_rental
-FROM customer c
-JOIN rental r ON c.customer_id = r.customer_id
-GROUP BY c.customer_id
-HAVING MAX(r.rental_date) < DATE_SUB(CURDATE(), INTERVAL 6 MONTH);
 
 
 -- Most Famous film  In Each Category
@@ -223,7 +204,7 @@ JOIN film f ON i.film_id = f.film_id
 JOIN customer c ON r.customer_id = c.customer_id
 GROUP BY  c.first_name, c.last_name, f.title
 HAVING COUNT(*) > 1
-ORDER BY'Frequency Of Order' DESC;
+ORDER BY COUNT(*) DESC;
 
 
 -- 	How many films in the  category have a rental rate higher than the average rental rate and less than average rate
@@ -238,21 +219,10 @@ on fc.film_id = i.film_id
 group by c.name ;
 
 
--- 	Distribution of Business across different Cities
-select city, count(rental_id) 'No of film Rented'
-from city c
-left join address a
-on c.city_id = a.city_id
-left join customer cu
-on a.address_id = cu.address_id
-left join rental r
-on cu.customer_id = r.customer_id
-where r.rental_id is not null
-group by city
-order by 1;
 
--- Customer Distribution Around dfferent country 
-select  country , count(customer_id) as 'Number of Customer'
+-- Top 3 revenue Generating Cities from Each Country 
+with data as (
+select  c.country, cy.city, sum(p.amount) as Revenue , count(r.rental_id) as "Total rental"
 from country c
 left join city cy
 on c.country_id = cy.country_id
@@ -260,10 +230,21 @@ left join address a
 on cy.city_id = a.city_id
 left join customer cm
 on a.address_id = cm.address_id
-group by 1
-order by 2 desc
-;
-
+left join rental r
+on cm.customer_id = r.customer_id
+left join payment p 
+on r.rental_id = p.rental_id
+ group by c.country, cy.city
+ ), top_city as (
+ select *,dense_rank() over(partition by country order by Revenue desc) as rk
+ from data
+ )
+ select * from top_city
+ where rk <= 3
+ order by country
+ ;
+ 
+ 
 
 -- 	Anlysis on customer Spending pattern on different Categories
 select 
@@ -308,6 +289,17 @@ JOIN inventory i ON s.store_id = i.store_id
 LEFT JOIN rental r ON r.inventory_id = i.inventory_id
 GROUP BY s.store_id;
  
+ -- Store Level Revenu Analysis.
+select c.store_id,a.staff_id, sum(b.amount) as total_revenue, count(a.rental_id) as rental_handled
+from rental a
+left join 
+payment b
+on a.rental_id=b.rental_id
+join staff c
+on b.staff_id =c.staff_id 
+group by c.store_id,a.staff_id
+order by total_revenue desc
+ ;
 
 -- Display the fields which are having foreign key constraints related to the "rental" table
 SELECT
@@ -382,5 +374,70 @@ WHERE pct > 50;
   -- There are no trnasaction which took more than one day of time to pay the rent
   
   
-  
+-- Find all customers who haven't rented any film in the last 60 days but were active in the 60 days prior to that. 
+-- List their customer ID, name, last rental date.
+with inactive_customers as (
+SELECT customer_id
+FROM customer
+WHERE customer_id NOT IN (
+  SELECT DISTINCT customer_id
+  FROM rental
+  WHERE rental_date >= DATE_SUB((SELECT MAX(rental_date) FROM rental), INTERVAL 60 DAY)
+)),
+active_customers as (
+SELECT customer_id
+FROM customer
+WHERE customer_id IN (
+  SELECT DISTINCT customer_id
+  FROM rental
+  WHERE rental_date between DATE_SUB((SELECT MAX(rental_date) FROM rental), INTERVAL 120 DAY) and  
+DATE_SUB((SELECT MAX(rental_date) FROM rental), INTERVAL 60 DAY) ))
+select c.customer_id, concat(first_name," ",last_name) as Name, c.email, 
+max(r.rental_date) as last_rental  from inactive_customers a
+join active_customers b
+on a.customer_id = b.customer_id
+join customer c
+on b.customer_id= c.customer_id
+join rental r
+on c.customer_id= r.customer_id
+group by c.customer_id, concat(first_name," ",last_name), c.email
+;
+
+--  Employee Performance Based on Customer Retention
+-- A customer is considered "retained" if they rented again within 30 days of their last rental.
+-- Find staff members who retained more than 40% of their customers.
+
+with next_rent as (
+select staff_id,customer_id, lead(rental_date)over(partition by customer_id order by rental_Date) as next_rental
+from rental
+)
+, active_cust as 
+(
+select r.staff_id, count(distinct r.customer_id) as active_cust_count
+from rental r
+join next_rent l
+on r.customer_id = l.customer_id
+where DATEDIFF(next_rental,rental_date) <= 30 
+and next_rental is not null
+group by staff_id)
+, 
+total_cust as (
+select staff_id, count(distinct customer_id) customer_handled from rental
+group by staff_id)
+
+select *  from active_cust a
+join total_cust b
+on a.staff_id=b.staff_id 
+where (active_cust_count/customer_handled)*100 >40
+;
+
+
+
+
+
+
+
+
+
+
  
